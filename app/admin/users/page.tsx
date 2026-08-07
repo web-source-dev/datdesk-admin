@@ -59,7 +59,6 @@ type UserFilters = {
   search: string;
   plan: string;
   label: string;
-  role: string;
   banned: string;
   proxy: string;
   cookie: string;
@@ -70,7 +69,6 @@ const emptyFilters: UserFilters = {
   search: '',
   plan: '',
   label: '',
-  role: '',
   banned: '',
   proxy: '',
   cookie: '',
@@ -90,6 +88,8 @@ const emptyForm = {
   assignedCookieId: '',
   permissions: defaultPermissions()
 };
+
+const PAGE_LIMIT = 50;
 
 function proxyIdOf(user: User) {
   if (!user.proxyId) return '';
@@ -111,56 +111,15 @@ function maskProxy(proxy?: string) {
   return proxy;
 }
 
-/** Client-side match — keeps UI correct even if an older API ignores query params. */
-function userMatchesFilters(user: User, f: UserFilters) {
-  const q = f.search.trim().toLowerCase();
-  if (q) {
-    const hay = `${user.name || ''} ${user.email || ''} ${user.note || ''}`.toLowerCase();
-    if (!hay.includes(q)) return false;
-  }
-
-  const plan = user.plan || 'single';
-  if (f.plan && plan !== f.plan) return false;
-
-  const label = user.label || '';
-  if (f.label === 'none') {
-    if (label) return false;
-  } else if (f.label) {
-    if (label !== f.label) return false;
-  } else if (label === 'swiftSolutions') {
-    // Default table hides partner Swift users unless explicitly filtered
-    return false;
-  }
-
-  if (f.role && user.role !== f.role) return false;
-
-  if (f.banned === 'true' && !user.isBanned) return false;
-  if (f.banned === 'false' && user.isBanned) return false;
-
-  const hasProxy = Boolean(proxyIdOf(user));
-  if (f.proxy === 'assigned' && !hasProxy) return false;
-  if (f.proxy === 'none' && hasProxy) return false;
-
-  const hasCookie = Boolean(cookieIdOf(user));
-  if (f.cookie === 'assigned' && !hasCookie) return false;
-  if (f.cookie === 'none' && hasCookie) return false;
-
-  const openDatOn = user.permissions?.openDat !== false;
-  if (f.openDat === 'true' && !openDatOn) return false;
-  if (f.openDat === 'false' && openDatOn) return false;
-
-  return true;
-}
-
 export default function UsersPage() {
-  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [proxies, setProxies] = useState<ProxyOption[]>([]);
   const [cookies, setCookies] = useState<CookieOption[]>([]);
   const [filters, setFilters] = useState<UserFilters>(emptyFilters);
   const [page, setPage] = useState(1);
-  const [serverPagination, setServerPagination] = useState<Pagination>({
+  const [pagination, setPagination] = useState<Pagination>({
     page: 1,
-    limit: 100,
+    limit: PAGE_LIMIT,
     total: 0,
     pages: 1
   });
@@ -172,6 +131,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const requestIdRef = useRef(0);
+  const metaLoadedRef = useRef(false);
 
   const activeFilterCount = useMemo(
     () =>
@@ -180,66 +140,45 @@ export default function UsersPage() {
     [filters]
   );
 
-  const filteredUsers = useMemo(
-    () => allUsers.filter((u) => userMatchesFilters(u, filters)),
-    [allUsers, filters]
-  );
-
-  const pageSize = 50;
-  const totalFiltered = filteredUsers.length;
-  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const users = filteredUsers.slice((safePage - 1) * pageSize, safePage * pageSize);
-
-  const fetchUsers = async (nextFilters: UserFilters) => {
+  const fetchUsers = async (nextPage: number, nextFilters: UserFilters) => {
     const reqId = ++requestIdRef.current;
     setLoading(true);
     setError('');
     try {
-      // Paginate until every matching user is loaded (Swift filter especially).
-      const pageLimit = 200;
-      let pageNum = 1;
-      let pages = 1;
-      let loaded: User[] = [];
-      let lastPagination: Pagination = {
-        page: 1,
-        limit: pageLimit,
-        total: 0,
-        pages: 1
-      };
-
-      do {
-        const usersData = await usersApi.getAll({
-          page: pageNum,
-          limit: pageLimit,
-          search: nextFilters.search.trim() || undefined,
-          label: nextFilters.label || undefined
-        });
-        loaded = loaded.concat(usersData.users || []);
-        lastPagination = usersData.pagination || {
-          page: pageNum,
-          limit: pageLimit,
-          total: loaded.length,
-          pages: 1
-        };
-        pages = Math.max(1, lastPagination.pages || 1);
-        pageNum += 1;
-      } while (pageNum <= pages && pageNum <= 50);
-
-      const [proxiesData, cookiesData] = await Promise.all([
-        proxiesApi.getAll(),
-        cookiesApi.getAll()
-      ]);
+      const usersData = await usersApi.getAll({
+        page: nextPage,
+        limit: PAGE_LIMIT,
+        search: nextFilters.search.trim() || undefined,
+        plan: nextFilters.plan || undefined,
+        label: nextFilters.label || undefined,
+        banned: nextFilters.banned || undefined,
+        proxy: nextFilters.proxy || undefined,
+        cookie: nextFilters.cookie || undefined,
+        openDat: nextFilters.openDat || undefined
+      });
 
       if (reqId !== requestIdRef.current) return;
 
-      setAllUsers(loaded);
-      setServerPagination({
-        ...lastPagination,
-        total: lastPagination.total || loaded.length
-      });
-      setProxies((proxiesData.proxies || []).filter((p: ProxyOption) => p.enabled !== false));
-      setCookies(cookiesData.cookies || []);
+      setUsers(usersData.users || []);
+      setPagination(
+        usersData.pagination || {
+          page: nextPage,
+          limit: PAGE_LIMIT,
+          total: (usersData.users || []).length,
+          pages: 1
+        }
+      );
+
+      if (!metaLoadedRef.current) {
+        const [proxiesData, cookiesData] = await Promise.all([
+          proxiesApi.getAll(),
+          cookiesApi.getAll()
+        ]);
+        if (reqId !== requestIdRef.current) return;
+        setProxies((proxiesData.proxies || []).filter((p: ProxyOption) => p.enabled !== false));
+        setCookies(cookiesData.cookies || []);
+        metaLoadedRef.current = true;
+      }
     } catch (err: any) {
       if (reqId !== requestIdRef.current) return;
       setError(err.response?.data?.message || err.message || 'Failed to load users');
@@ -248,53 +187,38 @@ export default function UsersPage() {
     }
   };
 
-  // Refetch when search/label change (dataset can change). Other filters are client-side.
+  // Every filter change hits the backend
   useEffect(() => {
     const delay = filters.search ? 300 : 0;
     const timer = setTimeout(() => {
       setPage(1);
-      fetchUsers(filters).catch(() => {});
+      fetchUsers(1, filters).catch(() => {});
     }, delay);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.search, filters.label]);
-
-  // Reset to page 1 immediately when any filter changes
-  useEffect(() => {
-    setPage(1);
   }, [
+    filters.search,
     filters.plan,
-    filters.role,
+    filters.label,
     filters.banned,
     filters.proxy,
     filters.cookie,
-    filters.openDat,
-    filters.search,
-    filters.label
+    filters.openDat
   ]);
 
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
-
   const setFilter = <K extends keyof UserFilters>(key: K, value: UserFilters[K]) => {
-    setFilters((prev) => {
-      // Selecting Swift Solutions should show the full partner set — clear other filters
-      // that commonly hide accounts (plan/role/proxy/etc.).
-      if (key === 'label' && value === 'swiftSolutions') {
-        return {
-          ...emptyFilters,
-          search: prev.search,
-          label: 'swiftSolutions'
-        };
-      }
-      return { ...prev, [key]: value };
-    });
+    setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
   const clearFilters = () => {
     setFilters(emptyFilters);
     setPage(1);
+  };
+
+  const goToPage = (next: number) => {
+    const safe = Math.max(1, Math.min(pagination.pages || 1, next));
+    setPage(safe);
+    fetchUsers(safe, filters).catch(() => {});
   };
 
   const openCreate = () => {
@@ -350,7 +274,6 @@ export default function UsersPage() {
         assignedCookieId: form.assignedCookieId || null,
         permissions: form.permissions
       };
-      // Role is database-only — never send role from the admin panel
       if (form.password) payload.password = form.password;
 
       if (editingId) {
@@ -365,7 +288,7 @@ export default function UsersPage() {
         await usersApi.create(payload);
       }
       closeModal();
-      await fetchUsers(filters);
+      await fetchUsers(page, filters);
     } catch (err: any) {
       setError(err.response?.data?.message || err.message);
     } finally {
@@ -379,10 +302,10 @@ export default function UsersPage() {
     setError('');
     try {
       await usersApi.update(userId, payload);
-      await fetchUsers(filters);
+      await fetchUsers(page, filters);
     } catch (err: any) {
       setError(err.response?.data?.message || err.message);
-      await fetchUsers(filters);
+      await fetchUsers(page, filters);
     } finally {
       setSavingKey(null);
     }
@@ -391,7 +314,7 @@ export default function UsersPage() {
   const remove = async (id: string) => {
     if (!confirm('Delete this user?')) return;
     await usersApi.remove(id);
-    await fetchUsers(filters);
+    await fetchUsers(page, filters);
   };
 
   return (
@@ -399,7 +322,7 @@ export default function UsersPage() {
       <div className="w-full">
         <PageHeader
           title="Users"
-          subtitle="Create accounts in a popup. Set label to Swift Solutions so they use the Swift active cookie."
+          subtitle="Non-admin accounts only. Filters query the backend. Swift Solutions users appear here and when you filter by that label."
           actions={
             <button type="button" onClick={openCreate} className="dd-btn-primary">
               + New user
@@ -432,7 +355,7 @@ export default function UsersPage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
               <select
                 className="dd-select"
                 value={filters.plan}
@@ -456,17 +379,6 @@ export default function UsersPage() {
                 <option value="horizon">Horizon</option>
                 <option value="test">Test</option>
                 <option value="swiftSolutions">Swift Solutions</option>
-              </select>
-
-              <select
-                className="dd-select"
-                value={filters.role}
-                onChange={(e) => setFilter('role', e.target.value)}
-                aria-label="Filter by role"
-              >
-                <option value="">All roles</option>
-                <option value="user">user</option>
-                <option value="admin">admin</option>
               </select>
 
               <select
@@ -521,39 +433,33 @@ export default function UsersPage() {
                 ) : (
                   <>
                     Showing <span className="font-medium text-slate-700">{users.length}</span> of{' '}
-                    <span className="font-medium text-slate-700">{totalFiltered}</span> matched
-                    {serverPagination.total !== totalFiltered ? (
-                      <span className="text-slate-400">
-                        {' '}
-                        (loaded {allUsers.length}/{serverPagination.total})
-                      </span>
-                    ) : null}
+                    <span className="font-medium text-slate-700">{pagination.total}</span> users
                     {activeFilterCount ? (
                       <span className="ml-1 text-brand-700">
-                        · {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} active
+                        · {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} (backend)
                       </span>
                     ) : null}
                   </>
                 )}
               </div>
-              {totalPages > 1 ? (
+              {pagination.pages > 1 ? (
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     className="dd-btn-secondary !py-1 !px-2.5"
-                    disabled={safePage <= 1 || loading}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1 || loading}
+                    onClick={() => goToPage(page - 1)}
                   >
                     Prev
                   </button>
                   <span>
-                    Page {safePage} / {totalPages}
+                    Page {pagination.page} / {pagination.pages}
                   </span>
                   <button
                     type="button"
                     className="dd-btn-secondary !py-1 !px-2.5"
-                    disabled={safePage >= totalPages || loading}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page >= pagination.pages || loading}
+                    onClick={() => goToPage(page + 1)}
                   >
                     Next
                   </button>
@@ -586,6 +492,9 @@ export default function UsersPage() {
                         <div className="text-xs text-slate-400">{user.email}</div>
                         <div className="text-[11px] text-slate-400 mt-0.5 capitalize">
                           {user.role}
+                          {user.label === 'swiftSolutions' ? (
+                            <span className="text-sky-600"> · Swift Solutions</span>
+                          ) : null}
                           {user.resolvedCookie ? (
                             <span className="text-emerald-600">
                               {' '}
@@ -765,9 +674,7 @@ export default function UsersPage() {
           <div className="grid sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Role</label>
-              <div className="dd-input bg-slate-50 text-slate-600 capitalize">
-                {editingId ? form.role || 'user' : 'user'}
-              </div>
+              <div className="dd-input bg-slate-50 text-slate-600 capitalize">user</div>
               <p className="mt-1 text-[11px] text-slate-400">
                 Admin accounts can only be created in the database.
               </p>
