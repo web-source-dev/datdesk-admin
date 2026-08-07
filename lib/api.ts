@@ -47,11 +47,32 @@ export const authApi = {
   }
 };
 
+export type UsersListParams = {
+  page?: number;
+  limit?: number;
+  search?: string;
+  plan?: string;
+  label?: string;
+  role?: string;
+  banned?: string;
+  proxy?: string;
+  cookie?: string;
+  openDat?: string;
+};
+
 export const usersApi = {
-  getAll: async (params?: { page?: number; search?: string }) => {
+  getAll: async (params?: UsersListParams) => {
     const q = new URLSearchParams();
     if (params?.page) q.set('page', String(params.page));
+    if (params?.limit) q.set('limit', String(params.limit));
     if (params?.search) q.set('search', params.search);
+    if (params?.plan) q.set('plan', params.plan);
+    if (params?.label) q.set('label', params.label);
+    if (params?.role) q.set('role', params.role);
+    if (params?.banned) q.set('banned', params.banned);
+    if (params?.proxy) q.set('proxy', params.proxy);
+    if (params?.cookie) q.set('cookie', params.cookie);
+    if (params?.openDat) q.set('openDat', params.openDat);
     const { data } = await api.get(`/user?${q.toString()}`);
     return data;
   },

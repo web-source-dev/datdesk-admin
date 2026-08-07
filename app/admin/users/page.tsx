@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
 import Modal from '@/components/Modal';
 import PageHeader from '@/components/PageHeader';
@@ -48,6 +48,35 @@ type User = {
   } | null;
 };
 
+type Pagination = {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+};
+
+type UserFilters = {
+  search: string;
+  plan: string;
+  label: string;
+  role: string;
+  banned: string;
+  proxy: string;
+  cookie: string;
+  openDat: string;
+};
+
+const emptyFilters: UserFilters = {
+  search: '',
+  plan: '',
+  label: '',
+  role: '',
+  banned: '',
+  proxy: '',
+  cookie: '',
+  openDat: ''
+};
+
 const emptyForm = {
   name: '',
   email: '',
@@ -86,29 +115,87 @@ export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [proxies, setProxies] = useState<ProxyOption[]>([]);
   const [cookies, setCookies] = useState<CookieOption[]>([]);
-  const [search, setSearch] = useState('');
+  const [filters, setFilters] = useState<UserFilters>(emptyFilters);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<Pagination>({
+    page: 1,
+    limit: 50,
+    total: 0,
+    pages: 1
+  });
   const [form, setForm] = useState(emptyForm);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState<string | null>(null);
 
-  const load = async (q = search) => {
-    const [usersData, proxiesData, cookiesData] = await Promise.all([
-      usersApi.getAll({ search: q }),
-      proxiesApi.getAll(),
-      cookiesApi.getAll()
-    ]);
-    setUsers(usersData.users || []);
-    setProxies((proxiesData.proxies || []).filter((p: ProxyOption) => p.enabled !== false));
-    setCookies(cookiesData.cookies || []);
-  };
+  const activeFilterCount = useMemo(
+    () =>
+      Object.entries(filters).filter(([key, value]) => key !== 'search' && Boolean(value))
+        .length + (filters.search.trim() ? 1 : 0),
+    [filters]
+  );
+
+  const load = useCallback(async (nextPage = page, nextFilters = filters) => {
+    setLoading(true);
+    setError('');
+    try {
+      const [usersData, proxiesData, cookiesData] = await Promise.all([
+        usersApi.getAll({
+          page: nextPage,
+          limit: 50,
+          search: nextFilters.search.trim() || undefined,
+          plan: nextFilters.plan || undefined,
+          label: nextFilters.label || undefined,
+          role: nextFilters.role || undefined,
+          banned: nextFilters.banned || undefined,
+          proxy: nextFilters.proxy || undefined,
+          cookie: nextFilters.cookie || undefined,
+          openDat: nextFilters.openDat || undefined
+        }),
+        proxiesApi.getAll(),
+        cookiesApi.getAll()
+      ]);
+      setUsers(usersData.users || []);
+      setPagination(
+        usersData.pagination || {
+          page: nextPage,
+          limit: 50,
+          total: (usersData.users || []).length,
+          pages: 1
+        }
+      );
+      setProxies((proxiesData.proxies || []).filter((p: ProxyOption) => p.enabled !== false));
+      setCookies(cookiesData.cookies || []);
+    } catch (err: any) {
+      setError(err.response?.data?.message || err.message || 'Failed to load users');
+    } finally {
+      setLoading(false);
+    }
+  }, [filters, page]);
 
   useEffect(() => {
-    load().catch((err) => setError(err.message));
+    load(1, filters).catch(() => {});
+    // initial load only
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const applyFilters = () => {
+    setPage(1);
+    load(1, filters).catch(() => {});
+  };
+
+  const clearFilters = () => {
+    setFilters(emptyFilters);
+    setPage(1);
+    load(1, emptyFilters).catch(() => {});
+  };
+
+  const setFilter = <K extends keyof UserFilters>(key: K, value: UserFilters[K]) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  };
 
   const openCreate = () => {
     setEditingId(null);
@@ -178,7 +265,7 @@ export default function UsersPage() {
         await usersApi.create(payload);
       }
       closeModal();
-      await load();
+      await load(page, filters);
     } catch (err: any) {
       setError(err.response?.data?.message || err.message);
     } finally {
@@ -192,10 +279,10 @@ export default function UsersPage() {
     setError('');
     try {
       await usersApi.update(userId, payload);
-      await load();
+      await load(page, filters);
     } catch (err: any) {
       setError(err.response?.data?.message || err.message);
-      await load();
+      await load(page, filters);
     } finally {
       setSavingKey(null);
     }
@@ -204,7 +291,13 @@ export default function UsersPage() {
   const remove = async (id: string) => {
     if (!confirm('Delete this user?')) return;
     await usersApi.remove(id);
-    await load();
+    await load(page, filters);
+  };
+
+  const goToPage = (next: number) => {
+    const safe = Math.max(1, Math.min(pagination.pages || 1, next));
+    setPage(safe);
+    load(safe, filters).catch(() => {});
   };
 
   return (
@@ -227,17 +320,151 @@ export default function UsersPage() {
         ) : null}
 
         <div className="dd-card">
-          <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row gap-2">
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && load()}
-              placeholder="Search users…"
-              className="dd-input flex-1"
-            />
-            <button type="button" onClick={() => load()} className="dd-btn-secondary">
-              Search
-            </button>
+          <div className="p-4 border-b border-slate-100 space-y-3">
+            <div className="flex flex-col lg:flex-row gap-2">
+              <input
+                value={filters.search}
+                onChange={(e) => setFilter('search', e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && applyFilters()}
+                placeholder="Search name, email, or note…"
+                className="dd-input flex-1"
+              />
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={applyFilters} className="dd-btn-primary">
+                  Apply filters
+                </button>
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="dd-btn-secondary"
+                  disabled={!activeFilterCount}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-2">
+              <select
+                className="dd-select"
+                value={filters.plan}
+                onChange={(e) => setFilter('plan', e.target.value)}
+                aria-label="Filter by plan"
+              >
+                <option value="">All plans</option>
+                <option value="single">single</option>
+                <option value="double">double</option>
+                <option value="multi">multi</option>
+              </select>
+
+              <select
+                className="dd-select"
+                value={filters.label}
+                onChange={(e) => setFilter('label', e.target.value)}
+                aria-label="Filter by label"
+              >
+                <option value="">All labels</option>
+                <option value="none">No label</option>
+                <option value="test">Test</option>
+                <option value="swiftSolutions">Swift Solutions</option>
+              </select>
+
+              <select
+                className="dd-select"
+                value={filters.role}
+                onChange={(e) => setFilter('role', e.target.value)}
+                aria-label="Filter by role"
+              >
+                <option value="">All roles</option>
+                <option value="user">user</option>
+                <option value="admin">admin</option>
+              </select>
+
+              <select
+                className="dd-select"
+                value={filters.banned}
+                onChange={(e) => setFilter('banned', e.target.value)}
+                aria-label="Filter by banned status"
+              >
+                <option value="">All status</option>
+                <option value="false">Active</option>
+                <option value="true">Banned</option>
+              </select>
+
+              <select
+                className="dd-select"
+                value={filters.proxy}
+                onChange={(e) => setFilter('proxy', e.target.value)}
+                aria-label="Filter by proxy"
+              >
+                <option value="">Any proxy</option>
+                <option value="assigned">Has proxy</option>
+                <option value="none">No proxy</option>
+              </select>
+
+              <select
+                className="dd-select"
+                value={filters.cookie}
+                onChange={(e) => setFilter('cookie', e.target.value)}
+                aria-label="Filter by cookie"
+              >
+                <option value="">Any cookie</option>
+                <option value="assigned">Specific cookie</option>
+                <option value="none">Channel cookie</option>
+              </select>
+
+              <select
+                className="dd-select"
+                value={filters.openDat}
+                onChange={(e) => setFilter('openDat', e.target.value)}
+                aria-label="Filter by Open DAT"
+              >
+                <option value="">Open DAT: any</option>
+                <option value="true">Open DAT on</option>
+                <option value="false">Open DAT off</option>
+              </select>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+              <div>
+                {loading ? (
+                  'Loading…'
+                ) : (
+                  <>
+                    Showing <span className="font-medium text-slate-700">{users.length}</span> of{' '}
+                    <span className="font-medium text-slate-700">{pagination.total}</span> users
+                    {activeFilterCount ? (
+                      <span className="ml-1 text-brand-700">
+                        · {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} active
+                      </span>
+                    ) : null}
+                  </>
+                )}
+              </div>
+              {pagination.pages > 1 ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="dd-btn-secondary !py-1 !px-2.5"
+                    disabled={page <= 1 || loading}
+                    onClick={() => goToPage(page - 1)}
+                  >
+                    Prev
+                  </button>
+                  <span>
+                    Page {pagination.page} / {pagination.pages}
+                  </span>
+                  <button
+                    type="button"
+                    className="dd-btn-secondary !py-1 !px-2.5"
+                    disabled={page >= pagination.pages || loading}
+                    onClick={() => goToPage(page + 1)}
+                  >
+                    Next
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -394,10 +621,12 @@ export default function UsersPage() {
                     </tr>
                   );
                 })}
-                {!users.length ? (
+                {!loading && !users.length ? (
                   <tr>
                     <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
-                      No users yet — create one to get started
+                      {activeFilterCount
+                        ? 'No users match these filters'
+                        : 'No users yet — create one to get started'}
                     </td>
                   </tr>
                 ) : null}
