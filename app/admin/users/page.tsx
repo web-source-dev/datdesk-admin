@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
 import Modal from '@/components/Modal';
 import PageHeader from '@/components/PageHeader';
@@ -111,15 +111,56 @@ function maskProxy(proxy?: string) {
   return proxy;
 }
 
+/** Client-side match — keeps UI correct even if an older API ignores query params. */
+function userMatchesFilters(user: User, f: UserFilters) {
+  const q = f.search.trim().toLowerCase();
+  if (q) {
+    const hay = `${user.name || ''} ${user.email || ''} ${user.note || ''}`.toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+
+  const plan = user.plan || 'single';
+  if (f.plan && plan !== f.plan) return false;
+
+  const label = user.label || '';
+  if (f.label === 'none') {
+    if (label) return false;
+  } else if (f.label) {
+    if (label !== f.label) return false;
+  } else if (label === 'swiftSolutions') {
+    // Default table hides partner Swift users unless explicitly filtered
+    return false;
+  }
+
+  if (f.role && user.role !== f.role) return false;
+
+  if (f.banned === 'true' && !user.isBanned) return false;
+  if (f.banned === 'false' && user.isBanned) return false;
+
+  const hasProxy = Boolean(proxyIdOf(user));
+  if (f.proxy === 'assigned' && !hasProxy) return false;
+  if (f.proxy === 'none' && hasProxy) return false;
+
+  const hasCookie = Boolean(cookieIdOf(user));
+  if (f.cookie === 'assigned' && !hasCookie) return false;
+  if (f.cookie === 'none' && hasCookie) return false;
+
+  const openDatOn = user.permissions?.openDat !== false;
+  if (f.openDat === 'true' && !openDatOn) return false;
+  if (f.openDat === 'false' && openDatOn) return false;
+
+  return true;
+}
+
 export default function UsersPage() {
-  const [users, setUsers] = useState<User[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [proxies, setProxies] = useState<ProxyOption[]>([]);
   const [cookies, setCookies] = useState<CookieOption[]>([]);
   const [filters, setFilters] = useState<UserFilters>(emptyFilters);
   const [page, setPage] = useState(1);
-  const [pagination, setPagination] = useState<Pagination>({
+  const [serverPagination, setServerPagination] = useState<Pagination>({
     page: 1,
-    limit: 50,
+    limit: 100,
     total: 0,
     pages: 1
   });
@@ -130,39 +171,52 @@ export default function UsersPage() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   const activeFilterCount = useMemo(
     () =>
-      Object.entries(filters).filter(([key, value]) => key !== 'search' && Boolean(value))
-        .length + (filters.search.trim() ? 1 : 0),
+      Object.entries(filters).filter(([key, value]) => key !== 'search' && Boolean(value)).length +
+      (filters.search.trim() ? 1 : 0),
     [filters]
   );
 
-  const load = useCallback(async (nextPage = page, nextFilters = filters) => {
+  const filteredUsers = useMemo(
+    () => allUsers.filter((u) => userMatchesFilters(u, filters)),
+    [allUsers, filters]
+  );
+
+  const pageSize = 50;
+  const totalFiltered = filteredUsers.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const users = filteredUsers.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  const fetchUsers = async (nextFilters: UserFilters) => {
+    const reqId = ++requestIdRef.current;
     setLoading(true);
     setError('');
     try {
+      // Load a full working set; plan/role/proxy/etc. filter client-side so dropdowns
+      // always update the table immediately (and keep working if API ignores params).
       const [usersData, proxiesData, cookiesData] = await Promise.all([
         usersApi.getAll({
-          page: nextPage,
-          limit: 50,
+          page: 1,
+          limit: 100,
           search: nextFilters.search.trim() || undefined,
-          plan: nextFilters.plan || undefined,
-          label: nextFilters.label || undefined,
-          role: nextFilters.role || undefined,
-          banned: nextFilters.banned || undefined,
-          proxy: nextFilters.proxy || undefined,
-          cookie: nextFilters.cookie || undefined,
-          openDat: nextFilters.openDat || undefined
+          // label must hit the API so Swift users can be included when selected
+          label: nextFilters.label || undefined
         }),
         proxiesApi.getAll(),
         cookiesApi.getAll()
       ]);
-      setUsers(usersData.users || []);
-      setPagination(
+
+      if (reqId !== requestIdRef.current) return;
+
+      setAllUsers(usersData.users || []);
+      setServerPagination(
         usersData.pagination || {
-          page: nextPage,
-          limit: 50,
+          page: 1,
+          limit: 100,
           total: (usersData.users || []).length,
           pages: 1
         }
@@ -170,31 +224,49 @@ export default function UsersPage() {
       setProxies((proxiesData.proxies || []).filter((p: ProxyOption) => p.enabled !== false));
       setCookies(cookiesData.cookies || []);
     } catch (err: any) {
+      if (reqId !== requestIdRef.current) return;
       setError(err.response?.data?.message || err.message || 'Failed to load users');
     } finally {
-      setLoading(false);
+      if (reqId === requestIdRef.current) setLoading(false);
     }
-  }, [filters, page]);
+  };
+
+  // Refetch when search/label change (dataset can change). Other filters are client-side.
+  useEffect(() => {
+    const delay = filters.search ? 300 : 0;
+    const timer = setTimeout(() => {
+      setPage(1);
+      fetchUsers(filters).catch(() => {});
+    }, delay);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.search, filters.label]);
+
+  // Reset to page 1 immediately when any filter changes
+  useEffect(() => {
+    setPage(1);
+  }, [
+    filters.plan,
+    filters.role,
+    filters.banned,
+    filters.proxy,
+    filters.cookie,
+    filters.openDat,
+    filters.search,
+    filters.label
+  ]);
 
   useEffect(() => {
-    load(1, filters).catch(() => {});
-    // initial load only
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
-  const applyFilters = () => {
-    setPage(1);
-    load(1, filters).catch(() => {});
+  const setFilter = <K extends keyof UserFilters>(key: K, value: UserFilters[K]) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
   const clearFilters = () => {
     setFilters(emptyFilters);
     setPage(1);
-    load(1, emptyFilters).catch(() => {});
-  };
-
-  const setFilter = <K extends keyof UserFilters>(key: K, value: UserFilters[K]) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
   const openCreate = () => {
@@ -265,7 +337,7 @@ export default function UsersPage() {
         await usersApi.create(payload);
       }
       closeModal();
-      await load(page, filters);
+      await fetchUsers(filters);
     } catch (err: any) {
       setError(err.response?.data?.message || err.message);
     } finally {
@@ -279,10 +351,10 @@ export default function UsersPage() {
     setError('');
     try {
       await usersApi.update(userId, payload);
-      await load(page, filters);
+      await fetchUsers(filters);
     } catch (err: any) {
       setError(err.response?.data?.message || err.message);
-      await load(page, filters);
+      await fetchUsers(filters);
     } finally {
       setSavingKey(null);
     }
@@ -291,13 +363,7 @@ export default function UsersPage() {
   const remove = async (id: string) => {
     if (!confirm('Delete this user?')) return;
     await usersApi.remove(id);
-    await load(page, filters);
-  };
-
-  const goToPage = (next: number) => {
-    const safe = Math.max(1, Math.min(pagination.pages || 1, next));
-    setPage(safe);
-    load(safe, filters).catch(() => {});
+    await fetchUsers(filters);
   };
 
   return (
@@ -325,23 +391,17 @@ export default function UsersPage() {
               <input
                 value={filters.search}
                 onChange={(e) => setFilter('search', e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && applyFilters()}
                 placeholder="Search name, email, or note…"
                 className="dd-input flex-1"
               />
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={applyFilters} className="dd-btn-primary">
-                  Apply filters
-                </button>
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="dd-btn-secondary"
-                  disabled={!activeFilterCount}
-                >
-                  Clear
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="dd-btn-secondary"
+                disabled={!activeFilterCount}
+              >
+                Clear filters
+              </button>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-7 gap-2">
@@ -365,6 +425,7 @@ export default function UsersPage() {
               >
                 <option value="">All labels</option>
                 <option value="none">No label</option>
+                <option value="horizon">Horizon</option>
                 <option value="test">Test</option>
                 <option value="swiftSolutions">Swift Solutions</option>
               </select>
@@ -432,7 +493,13 @@ export default function UsersPage() {
                 ) : (
                   <>
                     Showing <span className="font-medium text-slate-700">{users.length}</span> of{' '}
-                    <span className="font-medium text-slate-700">{pagination.total}</span> users
+                    <span className="font-medium text-slate-700">{totalFiltered}</span> matched
+                    {serverPagination.total !== totalFiltered ? (
+                      <span className="text-slate-400">
+                        {' '}
+                        (loaded {allUsers.length}/{serverPagination.total})
+                      </span>
+                    ) : null}
                     {activeFilterCount ? (
                       <span className="ml-1 text-brand-700">
                         · {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} active
@@ -441,24 +508,24 @@ export default function UsersPage() {
                   </>
                 )}
               </div>
-              {pagination.pages > 1 ? (
+              {totalPages > 1 ? (
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     className="dd-btn-secondary !py-1 !px-2.5"
-                    disabled={page <= 1 || loading}
-                    onClick={() => goToPage(page - 1)}
+                    disabled={safePage <= 1 || loading}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
                   >
                     Prev
                   </button>
                   <span>
-                    Page {pagination.page} / {pagination.pages}
+                    Page {safePage} / {totalPages}
                   </span>
                   <button
                     type="button"
                     className="dd-btn-secondary !py-1 !px-2.5"
-                    disabled={page >= pagination.pages || loading}
-                    onClick={() => goToPage(page + 1)}
+                    disabled={safePage >= totalPages || loading}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   >
                     Next
                   </button>
@@ -519,7 +586,9 @@ export default function UsersPage() {
                         <select
                           className="dd-select min-w-[130px]"
                           value={
-                            user.label === 'swiftSolutions' || user.label === 'test'
+                            user.label === 'swiftSolutions' ||
+                            user.label === 'test' ||
+                            user.label === 'horizon'
                               ? user.label
                               : ''
                           }
@@ -533,6 +602,7 @@ export default function UsersPage() {
                               {opt.label}
                             </option>
                           ))}
+                          <option value="horizon">Horizon</option>
                         </select>
                       </td>
                       <td>
@@ -692,7 +762,11 @@ export default function UsersPage() {
               <label className="block text-xs font-medium text-slate-500 mb-1">Label</label>
               <select
                 value={
-                  form.label === 'swiftSolutions' || form.label === 'test' ? form.label : ''
+                  form.label === 'swiftSolutions' ||
+                  form.label === 'test' ||
+                  form.label === 'horizon'
+                    ? form.label
+                    : ''
                 }
                 onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
                 className="dd-select !py-2"
@@ -702,6 +776,7 @@ export default function UsersPage() {
                     {opt.label}
                   </option>
                 ))}
+                <option value="horizon">Horizon</option>
               </select>
               <p className="mt-1 text-[11px] text-slate-400">
                 Swift Solutions users get the Swift active cookie (overrides plan).
