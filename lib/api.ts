@@ -69,6 +69,44 @@ export const usersApi = {
   }
 };
 
+export type PartnerSwiftCookieOption = {
+  _id: string;
+  fileName: string;
+  sessionName?: string | null;
+  sessionId?: string | null;
+  label?: string | null;
+  note?: string;
+  hasCookies: boolean;
+  ready: boolean;
+  isActiveSwiftSolutions?: boolean;
+};
+
+export type PartnerSwiftDashboardConfig = {
+  message?: string;
+  manualSelectionEnabled: boolean;
+  selectedCookieIds: string[];
+  selectedAccounts: PartnerSwiftCookieOption[];
+  validSelectedCount: number;
+  staleSelectedCount: number;
+  staleRemoved: Array<{
+    id: string;
+    reason: string;
+    sessionName?: string | null;
+    fileName?: string;
+    replacementId?: string;
+  }>;
+  selectionPruned: boolean;
+  slotLimit: number;
+  availableCookies: PartnerSwiftCookieOption[];
+  previewAccountCount: number;
+  previewAccounts: Array<{
+    slot: number;
+    displayName: string;
+    isActive: boolean;
+    ready: boolean;
+  }>;
+};
+
 export const cookiesApi = {
   getAll: async () => {
     const { data } = await api.get('/cookie');
@@ -98,6 +136,17 @@ export const cookiesApi = {
   remove: async (id: string) => {
     const { data } = await api.delete(`/cookie/${id}`);
     return data;
+  },
+  getPartnerSwiftDashboardConfig: async () => {
+    const { data } = await api.get('/cookie/partner-swift/dashboard-config');
+    return data as PartnerSwiftDashboardConfig;
+  },
+  updatePartnerSwiftDashboardConfig: async (payload: {
+    manualSelectionEnabled?: boolean;
+    selectedCookieIds?: string[];
+  }) => {
+    const { data } = await api.put('/cookie/partner-swift/dashboard-config', payload);
+    return data as PartnerSwiftDashboardConfig;
   }
 };
 
