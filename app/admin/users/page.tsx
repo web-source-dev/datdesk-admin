@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AdminShell from '@/components/AdminShell';
 import Modal from '@/components/Modal';
 import PageHeader from '@/components/PageHeader';
@@ -89,7 +89,7 @@ const emptyForm = {
   permissions: defaultPermissions()
 };
 
-const PAGE_LIMIT = 50;
+const PAGE_LIMIT = 200;
 
 function proxyIdOf(user: User) {
   if (!user.proxyId) return '';
@@ -111,18 +111,50 @@ function maskProxy(proxy?: string) {
   return proxy;
 }
 
+/** Local safety net so the table always respects filters even if API ignores params. */
+function matchesFilters(user: User, f: UserFilters) {
+  if (user.role === 'admin') return false;
+
+  const q = f.search.trim().toLowerCase();
+  if (q) {
+    const hay = `${user.name || ''} ${user.email || ''} ${user.note || ''}`.toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+
+  if (f.plan && (user.plan || 'single') !== f.plan) return false;
+
+  const label = user.label || '';
+  if (f.label === 'none') {
+    if (label) return false;
+  } else if (f.label && label !== f.label) {
+    return false;
+  }
+
+  if (f.banned === 'true' && !user.isBanned) return false;
+  if (f.banned === 'false' && user.isBanned) return false;
+
+  const hasProxy = Boolean(proxyIdOf(user));
+  if (f.proxy === 'assigned' && !hasProxy) return false;
+  if (f.proxy === 'none' && hasProxy) return false;
+
+  const hasCookie = Boolean(cookieIdOf(user));
+  if (f.cookie === 'assigned' && !hasCookie) return false;
+  if (f.cookie === 'none' && hasCookie) return false;
+
+  const openDatOn = user.permissions?.openDat !== false;
+  if (f.openDat === 'true' && !openDatOn) return false;
+  if (f.openDat === 'false' && openDatOn) return false;
+
+  return true;
+}
+
 export default function UsersPage() {
-  const [users, setUsers] = useState<User[]>([]);
+  const [rawUsers, setRawUsers] = useState<User[]>([]);
   const [proxies, setProxies] = useState<ProxyOption[]>([]);
   const [cookies, setCookies] = useState<CookieOption[]>([]);
   const [filters, setFilters] = useState<UserFilters>(emptyFilters);
   const [page, setPage] = useState(1);
-  const [pagination, setPagination] = useState<Pagination>({
-    page: 1,
-    limit: PAGE_LIMIT,
-    total: 0,
-    pages: 1
-  });
+  const [serverTotal, setServerTotal] = useState(0);
   const [form, setForm] = useState(emptyForm);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -132,6 +164,13 @@ export default function UsersPage() {
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const requestIdRef = useRef(0);
   const metaLoadedRef = useRef(false);
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
+
+  const users = useMemo(
+    () => rawUsers.filter((u) => matchesFilters(u, filters)),
+    [rawUsers, filters]
+  );
 
   const activeFilterCount = useMemo(
     () =>
@@ -140,13 +179,13 @@ export default function UsersPage() {
     [filters]
   );
 
-  const fetchUsers = async (nextPage: number, nextFilters: UserFilters) => {
+  const loadFromBackend = useCallback(async (nextFilters: UserFilters) => {
     const reqId = ++requestIdRef.current;
     setLoading(true);
     setError('');
     try {
       const usersData = await usersApi.getAll({
-        page: nextPage,
+        page: 1,
         limit: PAGE_LIMIT,
         search: nextFilters.search.trim() || undefined,
         plan: nextFilters.plan || undefined,
@@ -159,15 +198,10 @@ export default function UsersPage() {
 
       if (reqId !== requestIdRef.current) return;
 
-      setUsers(usersData.users || []);
-      setPagination(
-        usersData.pagination || {
-          page: nextPage,
-          limit: PAGE_LIMIT,
-          total: (usersData.users || []).length,
-          pages: 1
-        }
-      );
+      const list = (usersData.users || []).filter((u: User) => u.role !== 'admin');
+      setRawUsers(list);
+      setServerTotal(usersData.pagination?.total ?? list.length);
+      setPage(1);
 
       if (!metaLoadedRef.current) {
         const [proxiesData, cookiesData] = await Promise.all([
@@ -185,17 +219,14 @@ export default function UsersPage() {
     } finally {
       if (reqId === requestIdRef.current) setLoading(false);
     }
-  };
+  }, []);
 
-  // Every filter change hits the backend
+  // Initial + every filter change → backend fetch (debounced)
   useEffect(() => {
-    const delay = filters.search ? 300 : 0;
-    const timer = setTimeout(() => {
-      setPage(1);
-      fetchUsers(1, filters).catch(() => {});
-    }, delay);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const timer = window.setTimeout(() => {
+      loadFromBackend(filtersRef.current).catch(() => {});
+    }, 200);
+    return () => window.clearTimeout(timer);
   }, [
     filters.search,
     filters.plan,
@@ -203,22 +234,16 @@ export default function UsersPage() {
     filters.banned,
     filters.proxy,
     filters.cookie,
-    filters.openDat
+    filters.openDat,
+    loadFromBackend
   ]);
 
-  const setFilter = <K extends keyof UserFilters>(key: K, value: UserFilters[K]) => {
+  const updateFilter = <K extends keyof UserFilters>(key: K, value: UserFilters[K]) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
   const clearFilters = () => {
     setFilters(emptyFilters);
-    setPage(1);
-  };
-
-  const goToPage = (next: number) => {
-    const safe = Math.max(1, Math.min(pagination.pages || 1, next));
-    setPage(safe);
-    fetchUsers(safe, filters).catch(() => {});
   };
 
   const openCreate = () => {
@@ -288,7 +313,7 @@ export default function UsersPage() {
         await usersApi.create(payload);
       }
       closeModal();
-      await fetchUsers(page, filters);
+      await loadFromBackend(filtersRef.current);
     } catch (err: any) {
       setError(err.response?.data?.message || err.message);
     } finally {
@@ -302,10 +327,10 @@ export default function UsersPage() {
     setError('');
     try {
       await usersApi.update(userId, payload);
-      await fetchUsers(page, filters);
+      await loadFromBackend(filtersRef.current);
     } catch (err: any) {
       setError(err.response?.data?.message || err.message);
-      await fetchUsers(page, filters);
+      await loadFromBackend(filtersRef.current);
     } finally {
       setSavingKey(null);
     }
@@ -314,7 +339,7 @@ export default function UsersPage() {
   const remove = async (id: string) => {
     if (!confirm('Delete this user?')) return;
     await usersApi.remove(id);
-    await fetchUsers(page, filters);
+    await loadFromBackend(filtersRef.current);
   };
 
   return (
@@ -322,7 +347,7 @@ export default function UsersPage() {
       <div className="w-full">
         <PageHeader
           title="Users"
-          subtitle="Non-admin accounts only. Filters query the backend. Swift Solutions users appear here and when you filter by that label."
+          subtitle="Filters call the backend. Admin accounts are hidden. Swift Solutions users are included."
           actions={
             <button type="button" onClick={openCreate} className="dd-btn-primary">
               + New user
@@ -341,17 +366,25 @@ export default function UsersPage() {
             <div className="flex flex-col lg:flex-row gap-2">
               <input
                 value={filters.search}
-                onChange={(e) => setFilter('search', e.target.value)}
+                onChange={(e) => updateFilter('search', e.target.value)}
                 placeholder="Search name, email, or note…"
                 className="dd-input flex-1"
               />
+              <button
+                type="button"
+                className="dd-btn-primary"
+                disabled={loading}
+                onClick={() => loadFromBackend(filters)}
+              >
+                {loading ? 'Loading…' : 'Apply filters'}
+              </button>
               <button
                 type="button"
                 onClick={clearFilters}
                 className="dd-btn-secondary"
                 disabled={!activeFilterCount}
               >
-                Clear filters
+                Clear
               </button>
             </div>
 
@@ -359,8 +392,7 @@ export default function UsersPage() {
               <select
                 className="dd-select"
                 value={filters.plan}
-                onChange={(e) => setFilter('plan', e.target.value)}
-                aria-label="Filter by plan"
+                onChange={(e) => updateFilter('plan', e.target.value)}
               >
                 <option value="">All plans</option>
                 <option value="single">single</option>
@@ -371,8 +403,7 @@ export default function UsersPage() {
               <select
                 className="dd-select"
                 value={filters.label}
-                onChange={(e) => setFilter('label', e.target.value)}
-                aria-label="Filter by label"
+                onChange={(e) => updateFilter('label', e.target.value)}
               >
                 <option value="">All labels</option>
                 <option value="none">No label</option>
@@ -384,8 +415,7 @@ export default function UsersPage() {
               <select
                 className="dd-select"
                 value={filters.banned}
-                onChange={(e) => setFilter('banned', e.target.value)}
-                aria-label="Filter by banned status"
+                onChange={(e) => updateFilter('banned', e.target.value)}
               >
                 <option value="">All status</option>
                 <option value="false">Active</option>
@@ -395,8 +425,7 @@ export default function UsersPage() {
               <select
                 className="dd-select"
                 value={filters.proxy}
-                onChange={(e) => setFilter('proxy', e.target.value)}
-                aria-label="Filter by proxy"
+                onChange={(e) => updateFilter('proxy', e.target.value)}
               >
                 <option value="">Any proxy</option>
                 <option value="assigned">Has proxy</option>
@@ -406,8 +435,7 @@ export default function UsersPage() {
               <select
                 className="dd-select"
                 value={filters.cookie}
-                onChange={(e) => setFilter('cookie', e.target.value)}
-                aria-label="Filter by cookie"
+                onChange={(e) => updateFilter('cookie', e.target.value)}
               >
                 <option value="">Any cookie</option>
                 <option value="assigned">Specific cookie</option>
@@ -417,8 +445,7 @@ export default function UsersPage() {
               <select
                 className="dd-select"
                 value={filters.openDat}
-                onChange={(e) => setFilter('openDat', e.target.value)}
-                aria-label="Filter by Open DAT"
+                onChange={(e) => updateFilter('openDat', e.target.value)}
               >
                 <option value="">Open DAT: any</option>
                 <option value="true">Open DAT on</option>
@@ -426,45 +453,21 @@ export default function UsersPage() {
               </select>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-              <div>
-                {loading ? (
-                  'Loading…'
-                ) : (
-                  <>
-                    Showing <span className="font-medium text-slate-700">{users.length}</span> of{' '}
-                    <span className="font-medium text-slate-700">{pagination.total}</span> users
-                    {activeFilterCount ? (
-                      <span className="ml-1 text-brand-700">
-                        · {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} (backend)
-                      </span>
-                    ) : null}
-                  </>
-                )}
-              </div>
-              {pagination.pages > 1 ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="dd-btn-secondary !py-1 !px-2.5"
-                    disabled={page <= 1 || loading}
-                    onClick={() => goToPage(page - 1)}
-                  >
-                    Prev
-                  </button>
-                  <span>
-                    Page {pagination.page} / {pagination.pages}
-                  </span>
-                  <button
-                    type="button"
-                    className="dd-btn-secondary !py-1 !px-2.5"
-                    disabled={page >= pagination.pages || loading}
-                    onClick={() => goToPage(page + 1)}
-                  >
-                    Next
-                  </button>
-                </div>
-              ) : null}
+            <div className="text-xs text-slate-500">
+              {loading ? (
+                'Loading from backend…'
+              ) : (
+                <>
+                  Showing <span className="font-medium text-slate-700">{users.length}</span> users
+                  {activeFilterCount ? (
+                    <span className="text-brand-700">
+                      {' '}
+                      · {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} active
+                    </span>
+                  ) : null}
+                  <span className="text-slate-400"> · API total {serverTotal}</span>
+                </>
+              )}
             </div>
           </div>
 
@@ -711,9 +714,6 @@ export default function UsersPage() {
                 ))}
                 <option value="horizon">Horizon</option>
               </select>
-              <p className="mt-1 text-[11px] text-slate-400">
-                Swift Solutions users get the Swift active cookie (overrides plan).
-              </p>
             </div>
           </div>
 

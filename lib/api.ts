@@ -60,26 +60,20 @@ export type UsersListParams = {
   openDat?: string;
 };
 
-function appendParam(q: URLSearchParams, key: string, value?: string | number) {
-  if (value === undefined || value === null || value === '') return;
-  q.set(key, String(value));
-}
-
 export const usersApi = {
   getAll: async (params?: UsersListParams) => {
-    const q = new URLSearchParams();
-    appendParam(q, 'page', params?.page);
-    appendParam(q, 'limit', params?.limit);
-    appendParam(q, 'search', params?.search);
-    appendParam(q, 'plan', params?.plan);
-    appendParam(q, 'label', params?.label);
-    appendParam(q, 'role', params?.role);
-    appendParam(q, 'banned', params?.banned);
-    appendParam(q, 'proxy', params?.proxy);
-    appendParam(q, 'cookie', params?.cookie);
-    appendParam(q, 'openDat', params?.openDat);
-    const qs = q.toString();
-    const { data } = await api.get(qs ? `/user?${qs}` : '/user');
+    const query: Record<string, string | number> = {};
+    if (params?.page != null) query.page = params.page;
+    if (params?.limit != null) query.limit = params.limit;
+    if (params?.search) query.search = params.search;
+    if (params?.plan) query.plan = params.plan;
+    if (params?.label) query.label = params.label;
+    if (params?.role) query.role = params.role;
+    if (params?.banned) query.banned = params.banned;
+    if (params?.proxy) query.proxy = params.proxy;
+    if (params?.cookie) query.cookie = params.cookie;
+    if (params?.openDat) query.openDat = params.openDat;
+    const { data } = await api.get('/user', { params: query });
     return data;
   },
   create: async (payload: Record<string, unknown>) => {
