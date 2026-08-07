@@ -196,31 +196,48 @@ export default function UsersPage() {
     setLoading(true);
     setError('');
     try {
-      // Load a full working set; plan/role/proxy/etc. filter client-side so dropdowns
-      // always update the table immediately (and keep working if API ignores params).
-      const [usersData, proxiesData, cookiesData] = await Promise.all([
-        usersApi.getAll({
-          page: 1,
-          limit: 100,
+      // Paginate until every matching user is loaded (Swift filter especially).
+      const pageLimit = 200;
+      let pageNum = 1;
+      let pages = 1;
+      let loaded: User[] = [];
+      let lastPagination: Pagination = {
+        page: 1,
+        limit: pageLimit,
+        total: 0,
+        pages: 1
+      };
+
+      do {
+        const usersData = await usersApi.getAll({
+          page: pageNum,
+          limit: pageLimit,
           search: nextFilters.search.trim() || undefined,
-          // label must hit the API so Swift users can be included when selected
           label: nextFilters.label || undefined
-        }),
+        });
+        loaded = loaded.concat(usersData.users || []);
+        lastPagination = usersData.pagination || {
+          page: pageNum,
+          limit: pageLimit,
+          total: loaded.length,
+          pages: 1
+        };
+        pages = Math.max(1, lastPagination.pages || 1);
+        pageNum += 1;
+      } while (pageNum <= pages && pageNum <= 50);
+
+      const [proxiesData, cookiesData] = await Promise.all([
         proxiesApi.getAll(),
         cookiesApi.getAll()
       ]);
 
       if (reqId !== requestIdRef.current) return;
 
-      setAllUsers(usersData.users || []);
-      setServerPagination(
-        usersData.pagination || {
-          page: 1,
-          limit: 100,
-          total: (usersData.users || []).length,
-          pages: 1
-        }
-      );
+      setAllUsers(loaded);
+      setServerPagination({
+        ...lastPagination,
+        total: lastPagination.total || loaded.length
+      });
       setProxies((proxiesData.proxies || []).filter((p: ProxyOption) => p.enabled !== false));
       setCookies(cookiesData.cookies || []);
     } catch (err: any) {
@@ -261,7 +278,18 @@ export default function UsersPage() {
   }, [page, totalPages]);
 
   const setFilter = <K extends keyof UserFilters>(key: K, value: UserFilters[K]) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
+    setFilters((prev) => {
+      // Selecting Swift Solutions should show the full partner set — clear other filters
+      // that commonly hide accounts (plan/role/proxy/etc.).
+      if (key === 'label' && value === 'swiftSolutions') {
+        return {
+          ...emptyFilters,
+          search: prev.search,
+          label: 'swiftSolutions'
+        };
+      }
+      return { ...prev, [key]: value };
+    });
   };
 
   const clearFilters = () => {
@@ -314,7 +342,6 @@ export default function UsersPage() {
       const payload: Record<string, unknown> = {
         name: form.name,
         email: form.email,
-        role: form.role,
         domain: form.domain,
         note: form.note,
         proxyId: form.proxyId || null,
@@ -323,6 +350,7 @@ export default function UsersPage() {
         assignedCookieId: form.assignedCookieId || null,
         permissions: form.permissions
       };
+      // Role is database-only — never send role from the admin panel
       if (form.password) payload.password = form.password;
 
       if (editingId) {
@@ -737,14 +765,12 @@ export default function UsersPage() {
           <div className="grid sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Role</label>
-              <select
-                value={form.role}
-                onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
-                className="dd-select !py-2"
-              >
-                <option value="user">user</option>
-                <option value="admin">admin</option>
-              </select>
+              <div className="dd-input bg-slate-50 text-slate-600 capitalize">
+                {editingId ? form.role || 'user' : 'user'}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Admin accounts can only be created in the database.
+              </p>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Plan</label>
