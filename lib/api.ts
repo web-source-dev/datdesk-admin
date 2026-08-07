@@ -209,6 +209,7 @@ export type FreightdeskContainerSession = {
   isActiveSingle?: boolean;
   isActiveDouble?: boolean;
   isActiveMulti?: boolean;
+  isActiveSwiftSolutions?: boolean;
   isActiveTest?: boolean;
   isActive?: boolean;
   isWorking?: boolean;
@@ -219,7 +220,7 @@ export type FreightdeskStatus = {
   apiUrl: string;
 };
 
-export type CookieChannel = 'single' | 'double' | 'multi' | 'test';
+export type CookieChannel = 'single' | 'double' | 'multi' | 'swiftSolutions' | 'test';
 
 export type AssignableCookieLabel =
   | 'new'
@@ -237,6 +238,12 @@ export const COOKIE_LABEL_OPTIONS: { value: AssignableCookieLabel; label: string
   { value: 'multi_with_auto', label: 'Multi (with Auto)' },
   { value: 'test', label: 'Test' }
 ];
+
+export const USER_LABEL_OPTIONS = [
+  { value: '', label: '—' },
+  { value: 'swiftSolutions', label: 'Swift Solutions' },
+  { value: 'test', label: 'Test' }
+] as const;
 
 export const freightdeskApi = {
   getStatus: async () => {

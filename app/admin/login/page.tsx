@@ -40,15 +40,15 @@ function AdminLoginForm() {
     >
       <div className="mb-7 text-center">
         <Image
-          src="/datdesk-logo.png"
-          alt="Dat Desk"
+          src="/dat-logo.svg"
+          alt="Horizon"
           width={280}
           height={72}
-          className="mx-auto h-14 w-auto object-contain"
+          className="mx-auto h-10 w-auto object-contain"
           priority
         />
         <h1 className="text-lg font-semibold text-brand-900 mt-5">Admin</h1>
-        <p className="text-sm text-slate-500 mt-1">Sign in to manage Dat Desk</p>
+        <p className="text-sm text-slate-500 mt-1">Sign in to manage Horizon</p>
       </div>
 
       <label className="block text-xs font-medium text-slate-500 mb-1">Email</label>

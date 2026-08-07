@@ -2,10 +2,10 @@ import './globals.css';
 import { AuthProvider } from '@/lib/auth-context';
 
 export const metadata = {
-  title: 'Dat Desk Admin',
-  description: 'Admin dashboard for Dat Desk',
+  title: 'Horizon Admin',
+  description: 'Admin dashboard for Horizon',
   icons: {
-    icon: '/datdesk-icon.png'
+    icon: '/horizon-icon.png'
   }
 };
 

@@ -101,8 +101,8 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           <div className="flex items-center gap-3">
             <div className="relative shrink-0">
               <Image
-                src="/datdesk-icon.png"
-                alt="Dat Desk"
+                src="/horizon-icon.png"
+                alt="Horizon"
                 width={44}
                 height={44}
                 className="rounded-xl ring-1 ring-white/15"
@@ -110,7 +110,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
               />
             </div>
             <div className="min-w-0">
-              <div className="text-[15px] font-semibold tracking-tight leading-none">Dat Desk</div>
+              <div className="text-[15px] font-semibold tracking-tight leading-none">Horizon</div>
               <div className="mt-1.5 inline-flex items-center rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-white/70">
                 Admin
               </div>

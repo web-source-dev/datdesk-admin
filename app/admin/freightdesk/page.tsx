@@ -19,6 +19,8 @@ function isActiveForChannel(session: FreightdeskContainerSession, channel: Cooki
       return !!session.isActiveDouble;
     case 'multi':
       return !!session.isActiveMulti;
+    case 'swiftSolutions':
+      return !!session.isActiveSwiftSolutions;
     case 'test':
       return !!session.isActiveTest;
     case 'single':
@@ -147,11 +149,11 @@ export default function FreightdeskContainersPage() {
       <div className="w-full">
         <PageHeader
           title="FD Containers"
-          subtitle="Import FreightDesk container cookies into the database. Activate per plan channel."
+          subtitle="Import FreightDesk container cookies into the database. Activate per plan / Swift / Test channel."
           actions={
             <div className="flex flex-wrap items-center gap-2">
               <select
-                className="dd-input !w-auto min-w-[140px]"
+                className="dd-input !w-auto min-w-[160px]"
                 value={channel}
                 onChange={(e) => setChannel(e.target.value as CookieChannel)}
                 disabled={working !== null}
@@ -159,6 +161,7 @@ export default function FreightdeskContainersPage() {
                 <option value="single">Single plan</option>
                 <option value="double">Double plan</option>
                 <option value="multi">Multi plan</option>
+                <option value="swiftSolutions">Swift Solutions</option>
                 <option value="test">Test users</option>
               </select>
               <button

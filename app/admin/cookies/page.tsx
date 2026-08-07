@@ -11,6 +11,7 @@ const CHANNELS = [
   { id: 'single', label: 'Single', field: 'isActiveSingle' },
   { id: 'double', label: 'Double', field: 'isActiveDouble' },
   { id: 'multi', label: 'Multi', field: 'isActiveMulti' },
+  { id: 'swiftSolutions', label: 'Swift', field: 'isActiveSwiftSolutions' },
   { id: 'test', label: 'Test', field: 'isActiveTest' }
 ] as const;
 
@@ -23,6 +24,7 @@ type CookieRow = {
   isActiveSingle?: boolean;
   isActiveDouble?: boolean;
   isActiveMulti?: boolean;
+  isActiveSwiftSolutions?: boolean;
   isActiveTest?: boolean;
   isWorking?: boolean;
   note?: string;
@@ -127,7 +129,7 @@ export default function CookiesPage() {
       <div className="w-full">
         <PageHeader
           title="Cookies"
-          subtitle="Toggle Single / Double / Multi / Test right in the table. Mark sessions working or not."
+          subtitle="Toggle Single / Double / Multi / Swift / Test. Only one cookie can be active per channel."
           actions={
             <button type="button" onClick={() => setModalOpen(true)} className="dd-btn-primary">
               + Upload cookie

@@ -9,7 +9,7 @@ import PermissionsEditor, {
   defaultPermissions,
   type Permissions
 } from '@/components/PermissionsEditor';
-import { usersApi, proxiesApi, cookiesApi } from '@/lib/api';
+import { usersApi, proxiesApi, cookiesApi, USER_LABEL_OPTIONS } from '@/lib/api';
 
 type ProxyOption = {
   _id: string;
@@ -212,7 +212,7 @@ export default function UsersPage() {
       <div className="w-full">
         <PageHeader
           title="Users"
-          subtitle="Create accounts in a popup. Change plan, proxy, cookie, and access right in the table."
+          subtitle="Create accounts in a popup. Set label to Swift Solutions so they use the Swift active cookie."
           actions={
             <button type="button" onClick={openCreate} className="dd-btn-primary">
               + New user
@@ -290,15 +290,22 @@ export default function UsersPage() {
                       </td>
                       <td>
                         <select
-                          className="dd-select min-w-[90px]"
-                          value={user.label === 'test' ? 'test' : ''}
+                          className="dd-select min-w-[130px]"
+                          value={
+                            user.label === 'swiftSolutions' || user.label === 'test'
+                              ? user.label
+                              : ''
+                          }
                           disabled={!!busyRow}
                           onChange={(e) =>
                             patchInline(user._id, 'label', { label: e.target.value })
                           }
                         >
-                          <option value="">—</option>
-                          <option value="test">test</option>
+                          {USER_LABEL_OPTIONS.map((opt) => (
+                            <option key={opt.value || 'none'} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
                         </select>
                       </td>
                       <td>
@@ -454,12 +461,22 @@ export default function UsersPage() {
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-500 mb-1">Label</label>
-              <input
-                value={form.label}
+              <select
+                value={
+                  form.label === 'swiftSolutions' || form.label === 'test' ? form.label : ''
+                }
                 onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
-                placeholder="test = Test channel"
-                className="dd-input"
-              />
+                className="dd-select !py-2"
+              >
+                {USER_LABEL_OPTIONS.map((opt) => (
+                  <option key={opt.value || 'none'} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Swift Solutions users get the Swift active cookie (overrides plan).
+              </p>
             </div>
           </div>
 
