@@ -64,7 +64,7 @@ export default function UpdatesPage() {
       <div className="w-full">
         <PageHeader
           title="Updates"
-          subtitle="Horizon, Dat Desk, and Swift Solutions share this backend — each app has its own update channel and toggle."
+          subtitle="Dat Desk is the shared backend. Horizon and Swift Solutions each have their own update channel."
           actions={
             <button type="button" onClick={load} className="dd-btn-secondary">
               Refresh
