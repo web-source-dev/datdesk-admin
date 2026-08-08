@@ -48,13 +48,6 @@ type User = {
   } | null;
 };
 
-type Pagination = {
-  page: number;
-  limit: number;
-  total: number;
-  pages: number;
-};
-
 type UserFilters = {
   search: string;
   plan: string;
@@ -111,49 +104,19 @@ function maskProxy(proxy?: string) {
   return proxy;
 }
 
-/** Local safety net so the table always respects filters even if API ignores params. */
-function matchesFilters(user: User, f: UserFilters) {
-  if (user.role === 'admin') return false;
-
-  const q = f.search.trim().toLowerCase();
-  if (q) {
-    const hay = `${user.name || ''} ${user.email || ''} ${user.note || ''}`.toLowerCase();
-    if (!hay.includes(q)) return false;
-  }
-
-  if (f.plan && (user.plan || 'single') !== f.plan) return false;
-
-  const label = user.label || '';
-  if (f.label === 'none') {
-    if (label) return false;
-  } else if (f.label && label !== f.label) {
-    return false;
-  }
-
-  if (f.banned === 'true' && !user.isBanned) return false;
-  if (f.banned === 'false' && user.isBanned) return false;
-
-  const hasProxy = Boolean(proxyIdOf(user));
-  if (f.proxy === 'assigned' && !hasProxy) return false;
-  if (f.proxy === 'none' && hasProxy) return false;
-
-  const hasCookie = Boolean(cookieIdOf(user));
-  if (f.cookie === 'assigned' && !hasCookie) return false;
-  if (f.cookie === 'none' && hasCookie) return false;
-
-  const openDatOn = user.permissions?.openDat !== false;
-  if (f.openDat === 'true' && !openDatOn) return false;
-  if (f.openDat === 'false' && openDatOn) return false;
-
-  return true;
+function maskProxy(proxy?: string) {
+  if (!proxy) return '—';
+  const parts = proxy.split(':');
+  if (parts.length >= 3) return `${parts[0]}:${parts[1]}:${parts[2]}:***`;
+  if (parts.length >= 2) return `${parts[0]}:${parts[1]}`;
+  return proxy;
 }
 
 export default function UsersPage() {
-  const [rawUsers, setRawUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [proxies, setProxies] = useState<ProxyOption[]>([]);
   const [cookies, setCookies] = useState<CookieOption[]>([]);
   const [filters, setFilters] = useState<UserFilters>(emptyFilters);
-  const [page, setPage] = useState(1);
   const [serverTotal, setServerTotal] = useState(0);
   const [form, setForm] = useState(emptyForm);
   const [modalOpen, setModalOpen] = useState(false);
@@ -166,11 +129,6 @@ export default function UsersPage() {
   const metaLoadedRef = useRef(false);
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
-
-  const users = useMemo(
-    () => rawUsers.filter((u) => matchesFilters(u, filters)),
-    [rawUsers, filters]
-  );
 
   const activeFilterCount = useMemo(
     () =>
@@ -198,10 +156,14 @@ export default function UsersPage() {
 
       if (reqId !== requestIdRef.current) return;
 
-      const list = (usersData.users || []).filter((u: User) => u.role !== 'admin');
-      setRawUsers(list);
-      setServerTotal(usersData.pagination?.total ?? list.length);
-      setPage(1);
+      // Trust backend results — do not re-filter on the client (that was hiding Swift users)
+      const list: User[] = Array.isArray(usersData.users) ? usersData.users : [];
+      setUsers(list);
+      setServerTotal(
+        typeof usersData.pagination?.total === 'number'
+          ? usersData.pagination.total
+          : list.length
+      );
 
       if (!metaLoadedRef.current) {
         const [proxiesData, cookiesData] = await Promise.all([
@@ -216,6 +178,8 @@ export default function UsersPage() {
     } catch (err: any) {
       if (reqId !== requestIdRef.current) return;
       setError(err.response?.data?.message || err.message || 'Failed to load users');
+      setUsers([]);
+      setServerTotal(0);
     } finally {
       if (reqId === requestIdRef.current) setLoading(false);
     }
@@ -458,14 +422,14 @@ export default function UsersPage() {
                 'Loading from backend…'
               ) : (
                 <>
-                  Showing <span className="font-medium text-slate-700">{users.length}</span> users
+                  Showing <span className="font-medium text-slate-700">{users.length}</span> of{' '}
+                  <span className="font-medium text-slate-700">{serverTotal}</span> users
                   {activeFilterCount ? (
                     <span className="text-brand-700">
                       {' '}
                       · {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'} active
                     </span>
                   ) : null}
-                  <span className="text-slate-400"> · API total {serverTotal}</span>
                 </>
               )}
             </div>
