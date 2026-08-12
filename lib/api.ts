@@ -364,3 +364,199 @@ export const freightdeskApi = {
     return data;
   }
 };
+
+export type EmailAccountRow = {
+  id: string;
+  email: string;
+  method: string;
+  displayName?: string;
+  isDefault?: boolean;
+  connectedAt?: string;
+  sentCount?: number;
+  mailboxCount?: number;
+  canFetchLifetime?: boolean;
+  user?: { _id: string; name: string; email: string } | null;
+};
+
+export type SentEmailRow = {
+  id: string;
+  userId?: string | null;
+  from: string;
+  to: string;
+  subject: string;
+  body: string;
+  method: string;
+  messageId?: string;
+  accountId?: string | null;
+  templateId?: string | null;
+  vars?: Record<string, unknown> | null;
+  createdAt?: string;
+  user?: { _id: string; name: string; email: string } | null;
+};
+
+export type MailboxMessageRow = {
+  id: string;
+  userId: string;
+  accountId: string;
+  provider: string;
+  providerMessageId: string;
+  threadId?: string;
+  labelIds?: string[];
+  direction: string;
+  from: string;
+  to: string;
+  cc?: string;
+  subject: string;
+  snippet: string;
+  body?: string;
+  bodyHtml?: string;
+  internalDate?: string | null;
+  syncedAt?: string;
+  createdAt?: string;
+};
+
+export type ActivityLogRow = {
+  id: string;
+  userId?: string | null;
+  actorEmail: string;
+  action: string;
+  category: string;
+  status: string;
+  message: string;
+  meta?: Record<string, unknown> | null;
+  ip?: string;
+  userAgent?: string;
+  createdAt?: string;
+  user?: { _id: string; name: string; email: string } | null;
+};
+
+export type AdminUserDetail = {
+  user: {
+    _id: string;
+    name: string;
+    email: string;
+    role: string;
+    isBanned: boolean;
+    plan?: string;
+    label?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  };
+  stats: {
+    connectedAccounts: number;
+    sentEmails: number;
+    templates: number;
+    mailboxMessages: number;
+  };
+  recentActivity: ActivityLogRow[];
+};
+
+export const adminEmailApi = {
+  getUserDetail: async (userId: string) => {
+    const { data } = await api.get(`/admin/users/${userId}`);
+    return data as AdminUserDetail;
+  },
+  listUserAccounts: async (userId: string) => {
+    const { data } = await api.get(`/admin/users/${userId}/email-accounts`);
+    return data as { accounts: EmailAccountRow[] };
+  },
+  listUserSent: async (
+    userId: string,
+    params?: { page?: number; limit?: number; search?: string; accountId?: string }
+  ) => {
+    const { data } = await api.get(`/admin/users/${userId}/sent`, { params });
+    return data as { page: number; limit: number; total: number; emails: SentEmailRow[] };
+  },
+  listAccountSent: async (
+    userId: string,
+    accountId: string,
+    params?: { page?: number; limit?: number; search?: string }
+  ) => {
+    const { data } = await api.get(`/admin/users/${userId}/email-accounts/${accountId}/sent`, {
+      params
+    });
+    return data as {
+      account: EmailAccountRow;
+      page: number;
+      limit: number;
+      total: number;
+      emails: SentEmailRow[];
+    };
+  },
+  listMailbox: async (
+    userId: string,
+    accountId: string,
+    params?: { page?: number; limit?: number; search?: string; direction?: string }
+  ) => {
+    const { data } = await api.get(`/admin/users/${userId}/email-accounts/${accountId}/mailbox`, {
+      params
+    });
+    return data as {
+      account: EmailAccountRow;
+      page: number;
+      limit: number;
+      total: number;
+      messages: MailboxMessageRow[];
+    };
+  },
+  getMailboxMessage: async (id: string) => {
+    const { data } = await api.get(`/admin/mailbox/${id}`);
+    return data as { message: MailboxMessageRow };
+  },
+  getSentEmail: async (id: string) => {
+    const { data } = await api.get(`/admin/email/sent/${id}`);
+    return data as { email: SentEmailRow };
+  },
+  fetchLifetime: async (
+    userId: string,
+    accountId: string,
+    payload?: { maxMessages?: number; pageToken?: string; q?: string }
+  ) => {
+    const { data } = await api.post(
+      `/admin/users/${userId}/email-accounts/${accountId}/fetch-lifetime`,
+      payload || {}
+    );
+    return data as {
+      message: string;
+      upserted: number;
+      fetched: number;
+      nextPageToken: string;
+      resultSizeEstimate: number;
+      totalStored: number;
+      hasMore: boolean;
+    };
+  },
+  listAllSent: async (params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    userId?: string;
+    accountId?: string;
+  }) => {
+    const { data } = await api.get('/admin/email/sent', { params });
+    return data as { page: number; limit: number; total: number; emails: SentEmailRow[] };
+  },
+  listAllAccounts: async (params?: { page?: number; limit?: number; search?: string; userId?: string }) => {
+    const { data } = await api.get('/admin/email/accounts', { params });
+    return data as { page: number; limit: number; total: number; accounts: EmailAccountRow[] };
+  },
+  listActivity: async (params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    userId?: string;
+    action?: string;
+    category?: string;
+    status?: string;
+  }) => {
+    const { data } = await api.get('/admin/activity', { params });
+    return data as { page: number; limit: number; total: number; logs: ActivityLogRow[] };
+  },
+  listUserActivity: async (
+    userId: string,
+    params?: { page?: number; limit?: number; search?: string; action?: string; category?: string }
+  ) => {
+    const { data } = await api.get(`/admin/users/${userId}/activity`, { params });
+    return data as { page: number; limit: number; total: number; logs: ActivityLogRow[] };
+  }
+};

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import AdminShell from '@/components/AdminShell';
 import Modal from '@/components/Modal';
 import PageHeader from '@/components/PageHeader';
@@ -94,14 +95,6 @@ function cookieIdOf(user: User) {
   if (!user.assignedCookieId) return '';
   if (typeof user.assignedCookieId === 'string') return user.assignedCookieId;
   return '';
-}
-
-function maskProxy(proxy?: string) {
-  if (!proxy) return '—';
-  const parts = proxy.split(':');
-  if (parts.length >= 3) return `${parts[0]}:${parts[1]}:${parts[2]}:***`;
-  if (parts.length >= 2) return `${parts[0]}:${parts[1]}`;
-  return proxy;
 }
 
 function maskProxy(proxy?: string) {
@@ -577,6 +570,12 @@ export default function UsersPage() {
                         />
                       </td>
                       <td className="text-right whitespace-nowrap">
+                        <Link
+                          href={`/admin/users/${user._id}`}
+                          className="dd-btn-secondary !py-1.5 !px-2.5 mr-1 inline-block"
+                        >
+                          View
+                        </Link>
                         <button
                           type="button"
                           className="dd-btn-secondary !py-1.5 !px-2.5 mr-1"
