@@ -39,6 +39,33 @@ const links = [
     )
   },
   {
+    href: '/admin/loads',
+    label: 'Loads',
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M3 7h13v10H3zM16 10h4l1 3v4h-5V10z"
+          stroke="currentColor"
+          strokeWidth="1.75"
+          strokeLinejoin="round"
+        />
+        <circle cx="7" cy="18.5" r="1.5" stroke="currentColor" strokeWidth="1.5" />
+        <circle cx="18" cy="18.5" r="1.5" stroke="currentColor" strokeWidth="1.5" />
+      </svg>
+    )
+  },
+  {
+    href: '/admin/contacts',
+    label: 'Contacts',
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="4" y="3" width="16" height="18" rx="2" stroke="currentColor" strokeWidth="1.75" />
+        <circle cx="12" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.75" />
+        <path d="M7.5 17c1.2-2 2.8-3 4.5-3s3.3 1 4.5 3" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+      </svg>
+    )
+  },
+  {
     href: '/admin/proxies',
     label: 'Proxies',
     icon: (

@@ -560,3 +560,174 @@ export const adminEmailApi = {
     return data as { page: number; limit: number; total: number; logs: ActivityLogRow[] };
   }
 };
+
+export type FreightPlace = { city?: string; state?: string; zip?: string; raw?: string };
+
+export type FreightLoadRow = {
+  id: string;
+  loadNumber: string;
+  matchKey: string;
+  status: string;
+  statusConfidence: number;
+  pickup?: FreightPlace;
+  delivery?: FreightPlace;
+  equipment?: string;
+  weight?: string;
+  miles?: number | null;
+  rate?: number | null;
+  brokerEmail?: string;
+  carrierEmail?: string;
+  brokerName?: string;
+  carrierName?: string;
+  employeeEmails?: string[];
+  employees?: Array<{ _id: string; name?: string; email?: string } | null>;
+  emailCount?: number;
+  subjectSample?: string;
+  lastEmailAt?: string | null;
+  firstEmailAt?: string | null;
+  routeLabel?: string;
+  extractionConfidence?: number;
+  brokerContact?: FreightContactRow | null;
+  carrierContact?: FreightContactRow | null;
+};
+
+export type FreightContactRow = {
+  id: string;
+  email: string;
+  domain?: string;
+  companyName?: string;
+  contactName?: string;
+  phone?: string;
+  partyType: string;
+  partyTypeAuto?: string;
+  partyTypeOverride?: string | null;
+  confidence?: number;
+  emailCount?: number;
+  brokerSignals?: number;
+  carrierSignals?: number;
+  lastSeenAt?: string | null;
+  notes?: string;
+};
+
+export type FreightOverview = {
+  emailsToday: number;
+  loadsToday: number;
+  openCount: number;
+  bookedCount: number;
+  unprocessedEmails: number;
+  noiseFiltered?: number;
+  freightLinkedEmails?: number;
+  byStatus: Record<string, number>;
+  byParty: Record<string, number>;
+  totalLoads: number;
+  totalContacts: number;
+};
+
+export type FreightLoadEventRow = {
+  id: string;
+  loadId: string;
+  status: string;
+  previousStatus?: string | null;
+  source: string;
+  title: string;
+  note: string;
+  confidence: number;
+  signals?: string[];
+  occurredAt?: string;
+};
+
+export const freightApi = {
+  overview: async () => {
+    const { data } = await api.get('/admin/freight/overview');
+    return data as FreightOverview;
+  },
+  listLoads: async (params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    status?: string;
+    employeeUserId?: string;
+  }) => {
+    const { data } = await api.get('/admin/freight/loads', { params });
+    return data as { page: number; limit: number; total: number; loads: FreightLoadRow[] };
+  },
+  getLoad: async (id: string) => {
+    const { data } = await api.get(`/admin/freight/loads/${id}`);
+    return data as {
+      load: FreightLoadRow;
+      events: FreightLoadEventRow[];
+      messages: MailboxMessageRow[];
+    };
+  },
+  updateLoad: async (id: string, payload: Record<string, unknown>) => {
+    const { data } = await api.patch(`/admin/freight/loads/${id}`, payload);
+    return data as { load: FreightLoadRow };
+  },
+  listContacts: async (params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    partyType?: string;
+  }) => {
+    const { data } = await api.get('/admin/freight/contacts', { params });
+    return data as { page: number; limit: number; total: number; contacts: FreightContactRow[] };
+  },
+  updateContact: async (id: string, payload: Record<string, unknown>) => {
+    const { data } = await api.patch(`/admin/freight/contacts/${id}`, payload);
+    return data as { contact: FreightContactRow };
+  },
+  processEmails: async (payload?: {
+    limit?: number;
+    accountId?: string;
+    userId?: string;
+    force?: boolean;
+  }) => {
+    const { data } = await api.post('/admin/freight/process', payload || {});
+    return data as {
+      message: string;
+      scanned: number;
+      processed: number;
+      skipped: number;
+      skippedNoise?: number;
+      errors: number;
+      loadsTouched: number;
+    };
+  },
+  listEmployees: async () => {
+    const { data } = await api.get('/admin/freight/employees');
+    return data as { employees: Array<{ _id: string; name: string; email: string }> };
+  },
+  syncStatus: async () => {
+    const { data } = await api.get('/admin/freight/sync/status');
+    return data as {
+      enabled: boolean;
+      cronExpr: string;
+      running: boolean;
+      lastRunAt?: string | null;
+      lastRunResult?: Record<string, unknown> | null;
+      config?: Record<string, unknown>;
+      accounts?: Array<{
+        accountId: string;
+        accountEmail?: string;
+        method?: string;
+        enabled: boolean;
+        lastSyncAt?: string | null;
+        lastSuccessAt?: string | null;
+        lastError?: string;
+        lastUpserted?: number;
+        lastProcessed?: number;
+        totalFetched?: number;
+        consecutiveFailures?: number;
+        user?: { _id: string; name: string; email: string } | null;
+      }>;
+    };
+  },
+  runSync: async (payload?: { accountId?: string; maxMessages?: number }) => {
+    const { data } = await api.post('/admin/freight/sync/run', payload || {});
+    return data;
+  },
+  updateSyncAccount: async (accountId: string, payload: { enabled?: boolean; resetErrors?: boolean }) => {
+    const { data } = await api.patch(`/admin/freight/sync/accounts/${accountId}`, payload);
+    return data;
+  }
+};
