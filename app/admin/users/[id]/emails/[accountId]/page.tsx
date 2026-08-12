@@ -139,13 +139,13 @@ export default function AccountEmailsPage() {
     <AdminShell>
       <PageHeader
         title={account?.email || 'Inbox'}
-        subtitle="Sent via Dat Desk, plus lifetime Gmail history when OAuth is connected"
+        subtitle="Sent via Dat Desk, plus lifetime mailbox history (Gmail API for OAuth, IMAP for app password / SMTP)"
         actions={
           <div className="flex flex-wrap gap-2">
             <Link href={`/admin/users/${userId}`} className="dd-btn-secondary">
               ← User
             </Link>
-            {account?.canFetchLifetime || account?.method === 'oauth' ? (
+            {account?.canFetchLifetime !== false ? (
               <>
                 <button
                   type="button"
@@ -168,7 +168,7 @@ export default function AccountEmailsPage() {
               </>
             ) : (
               <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                Lifetime sync needs Google OAuth reconnect
+                Lifetime sync unavailable for this account type
               </span>
             )}
           </div>
