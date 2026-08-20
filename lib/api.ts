@@ -334,19 +334,50 @@ export const freightdeskApi = {
     });
     return data;
   },
-  importAll: async (options?: {
-    activate?: boolean;
-    channel?: CookieChannel;
-    forceReimport?: boolean;
-  }) => {
+  importAll: async (
+    options?: {
+      activate?: boolean;
+      channel?: CookieChannel;
+      forceReimport?: boolean;
+    },
+    onProgress?: (info: {
+      message?: string;
+      status?: string;
+      progress?: {
+        imported?: number;
+        failed?: number;
+        total?: number | null;
+        current?: string | null;
+        phase?: string;
+      };
+    }) => void
+  ) => {
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+    const formatProgress = (job: any) => {
+      const p = job?.progress || {};
+      const imported = Number(p.imported || 0);
+      const failed = Number(p.failed || 0);
+      const total = p.total == null ? null : Number(p.total);
+      const done = imported + failed;
+      if (job?.message) return String(job.message);
+      if (total != null) {
+        return `Importing ${done}/${total}${p.current ? ` · ${p.current}` : ''}…`;
+      }
+      return 'Importing…';
+    };
+
     const pollJob = async (jobId: string) => {
-      const deadline = Date.now() + 15 * 60 * 1000;
+      const deadline = Date.now() + 30 * 60 * 1000;
       while (Date.now() < deadline) {
-        await sleep(2000);
         const { data: job } = await api.get(`/freightdesk/import-all/${encodeURIComponent(jobId)}`, {
           timeout: 30000
+        });
+
+        onProgress?.({
+          message: formatProgress(job),
+          status: job?.status,
+          progress: job?.progress
         });
 
         if (job?.status === 'done') {
@@ -362,6 +393,8 @@ export const freightdeskApi = {
           err.response = { data: { message: job.error || job.message || 'Import failed' } };
           throw err;
         }
+
+        await sleep(1500);
       }
       throw new Error('Import is still running on the server. Refresh sessions in a minute.');
     };
@@ -374,6 +407,7 @@ export const freightdeskApi = {
       );
 
       const startData = start.data as {
+        isAsync?: boolean;
         async?: boolean;
         jobId?: string;
         status?: string;
@@ -382,14 +416,21 @@ export const freightdeskApi = {
         imported?: number;
       };
 
-      if (!startData?.async || !startData.jobId) {
-        return startData;
+      const jobId = startData?.jobId;
+      if (jobId) {
+        onProgress?.({
+          message: startData.message || 'Import started…',
+          status: startData.status || 'running'
+        });
+        return pollJob(jobId);
       }
 
-      return pollJob(startData.jobId);
+      // Legacy sync response
+      return startData;
     } catch (err: any) {
       const jobId = err?.response?.data?.jobId;
       if (err?.response?.status === 409 && jobId) {
+        onProgress?.({ message: 'Import already running — joining…', status: 'running' });
         return pollJob(jobId);
       }
       throw err;
