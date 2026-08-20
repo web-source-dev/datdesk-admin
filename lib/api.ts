@@ -339,11 +339,61 @@ export const freightdeskApi = {
     channel?: CookieChannel;
     forceReimport?: boolean;
   }) => {
-    const { data } = await api.post('/freightdesk/import-all', {
-      forceReimport: true,
-      ...options
-    });
-    return data;
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    const pollJob = async (jobId: string) => {
+      const deadline = Date.now() + 15 * 60 * 1000;
+      while (Date.now() < deadline) {
+        await sleep(2000);
+        const { data: job } = await api.get(`/freightdesk/import-all/${encodeURIComponent(jobId)}`, {
+          timeout: 30000
+        });
+
+        if (job?.status === 'done') {
+          return {
+            success: true,
+            ...(job.result || {}),
+            message: job.message || job.result?.message || 'Import complete'
+          };
+        }
+
+        if (job?.status === 'error') {
+          const err: any = new Error(job.error || job.message || 'Import failed');
+          err.response = { data: { message: job.error || job.message || 'Import failed' } };
+          throw err;
+        }
+      }
+      throw new Error('Import is still running on the server. Refresh sessions in a minute.');
+    };
+
+    try {
+      const start = await api.post(
+        '/freightdesk/import-all',
+        { forceReimport: true, ...options },
+        { timeout: 60000 }
+      );
+
+      const startData = start.data as {
+        async?: boolean;
+        jobId?: string;
+        status?: string;
+        message?: string;
+        success?: boolean;
+        imported?: number;
+      };
+
+      if (!startData?.async || !startData.jobId) {
+        return startData;
+      }
+
+      return pollJob(startData.jobId);
+    } catch (err: any) {
+      const jobId = err?.response?.data?.jobId;
+      if (err?.response?.status === 409 && jobId) {
+        return pollJob(jobId);
+      }
+      throw err;
+    }
   },
   activate: async (container: string, channel: CookieChannel = 'single') => {
     const { data } = await api.post(`/freightdesk/activate/${encodeURIComponent(container)}`, {

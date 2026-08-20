@@ -90,13 +90,24 @@ export default function FreightdeskContainersPage() {
   const handleImportAll = async (activate = false) => {
     setWorking(activate ? 'import-all-activate' : 'import-all');
     setError('');
-    setMessage('');
+    setMessage(activate ? 'Import all & activate started…' : 'Import all started…');
     try {
       const res = await freightdeskApi.importAll({ activate, channel, forceReimport: true });
       setMessage(res.message || 'Import complete');
       await load();
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Failed to import all containers');
+      const msg =
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to import all containers';
+      // Axios often surfaces proxy timeouts as a Network/CORS error
+      if (/cors|network error|err_failed|failed to fetch/i.test(String(msg))) {
+        setError(
+          'Import request failed before completion (often a proxy timeout). The server may still be importing — wait a minute and refresh.'
+        );
+      } else {
+        setError(msg);
+      }
     } finally {
       setWorking(null);
     }
