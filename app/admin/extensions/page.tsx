@@ -14,6 +14,29 @@ function formatBytes(bytes?: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function uploadErrorMessage(err: any) {
+  const status = err?.response?.status;
+  const dataMsg = String(err?.response?.data?.message || '');
+  const raw = String(err?.message || '');
+  if (
+    status === 413 ||
+    /413|too large|Request Entity Too Large/i.test(`${dataMsg} ${raw}`)
+  ) {
+    return (
+      'ZIP was rejected as too large (HTTP 413). nginx in front of the API is still using the default 1MB limit. ' +
+      'On the API server add `client_max_body_size 50m;` to the datdesk.apexskillzone.com site, then `sudo nginx -t && sudo systemctl reload nginx`.'
+    );
+  }
+  if (!err?.response) {
+    return (
+      dataMsg ||
+      raw ||
+      'Upload failed. If the console shows CORS + 413, raise nginx client_max_body_size to 50m on the API host.'
+    );
+  }
+  return dataMsg || raw || 'Upload failed';
+}
+
 export default function ExtensionsPage() {
   const [extensions, setExtensions] = useState<ManagedExtension[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,7 +102,7 @@ export default function ExtensionsPage() {
       closeModal();
       await load();
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Upload failed');
+      setError(uploadErrorMessage(err));
     } finally {
       setUploading(false);
     }
@@ -115,7 +138,7 @@ export default function ExtensionsPage() {
       <div className="w-full">
         <PageHeader
           title="Extensions"
-          subtitle="Enable or disable packs instantly in the table. Upload Chromium ZIP packages via popup. Turn extensions off for a specific user under Users."
+          subtitle="ZIP packages are stored in the shared database so Dat Desk, Horizon, and Swift can download them from any API host. Same slug replaces the previous package. Re-upload if a desktop app says the package file is missing."
           actions={
             <>
               <button type="button" onClick={load} className="dd-btn-secondary">
@@ -200,7 +223,7 @@ export default function ExtensionsPage() {
         open={modalOpen}
         onClose={closeModal}
         title="Upload extension"
-        subtitle="ZIP must include manifest.json — same slug replaces the package"
+        subtitle="ZIP must include manifest.json — same slug replaces the package. The ZIP is stored in Mongo so every API host can serve it."
       >
         <form onSubmit={handleUpload} className="space-y-3">
           <div>
@@ -221,6 +244,15 @@ export default function ExtensionsPage() {
               }}
               className="block w-full text-sm"
             />
+            {file ? (
+              <p className="mt-1 text-[11px] text-slate-500">
+                Selected {file.name} ({formatBytes(file.size)})
+              </p>
+            ) : (
+              <p className="mt-1 text-[11px] text-slate-400">
+                Chromium extension ZIP. Server allows up to 50MB; nginx must match that limit.
+              </p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

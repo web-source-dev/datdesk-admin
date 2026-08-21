@@ -206,6 +206,7 @@ export type ManagedExtension = {
   fileName?: string;
   originalFileName?: string;
   fileSize?: number;
+  contentHash?: string | null;
   enabled: boolean;
   extensionId?: string | null;
   createdAt?: string;
