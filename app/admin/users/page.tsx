@@ -438,6 +438,7 @@ export default function UsersPage() {
                   <th>Proxy</th>
                   <th>Cookie</th>
                   <th>Open DAT</th>
+                  <th>Extensions</th>
                   <th>Banned</th>
                   <th className="text-right">Actions</th>
                 </tr>
@@ -561,6 +562,22 @@ export default function UsersPage() {
                       </td>
                       <td>
                         <Toggle
+                          checked={user.permissions?.extensionsEnabled !== false}
+                          disabled={!!busyRow}
+                          label="Extensions"
+                          onChange={(next) =>
+                            patchInline(user._id, 'extensions', {
+                              permissions: {
+                                ...defaultPermissions(),
+                                ...(user.permissions || {}),
+                                extensionsEnabled: next
+                              }
+                            })
+                          }
+                        />
+                      </td>
+                      <td>
+                        <Toggle
                           checked={!!user.isBanned}
                           disabled={!!busyRow}
                           label="Banned"
@@ -596,7 +613,7 @@ export default function UsersPage() {
                 })}
                 {!loading && !users.length ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-12 text-center text-slate-400">
+                    <td colSpan={9} className="px-4 py-12 text-center text-slate-400">
                       {activeFilterCount
                         ? 'No users match these filters'
                         : 'No users yet — create one to get started'}

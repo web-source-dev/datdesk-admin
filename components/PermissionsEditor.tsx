@@ -14,6 +14,7 @@ export type Permissions = {
   datMultitabNumbers: number;
   webMultitab: boolean;
   webMultitabNumbers: number;
+  extensionsEnabled: boolean;
   customTabs: CustomTab[];
 };
 
@@ -23,6 +24,7 @@ export const defaultPermissions = (): Permissions => ({
   datMultitabNumbers: 1,
   webMultitab: false,
   webMultitabNumbers: 1,
+  extensionsEnabled: true,
   customTabs: []
 });
 
@@ -73,6 +75,19 @@ export default function PermissionsEditor({ value, onChange }: Props) {
           />
           Allow Open DAT
         </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={value.extensionsEnabled !== false}
+            onChange={(e) => set({ extensionsEnabled: e.target.checked })}
+            className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+          />
+          Allow extensions
+        </label>
+        <p className="mt-1 text-[11px] text-slate-500">
+          When off, Dat Desk / Horizon / Swift will not load managed extensions (including DAT Email)
+          for this user.
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

@@ -115,7 +115,7 @@ export default function ExtensionsPage() {
       <div className="w-full">
         <PageHeader
           title="Extensions"
-          subtitle="Enable or disable packs instantly in the table. Upload Chromium ZIP packages via popup."
+          subtitle="Enable or disable packs instantly in the table. Upload Chromium ZIP packages via popup. Turn extensions off for a specific user under Users."
           actions={
             <>
               <button type="button" onClick={load} className="dd-btn-secondary">
